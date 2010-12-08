@@ -1,0 +1,13 @@
+Source: php-consistenthashing
+Section: web
+Priority: optional
+Maintainer: Simon Effenberg <savar@schuldeigen.de>
+Build-Depends: debhelper (>= 7), php5-dev
+Standards-Version: 3.8.0
+Homepage: http://github.com/Savar/php-consistenthashing
+
+Package: php-consistenthashing
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, ${php5:Depends}
+Recommends: php5
+Description: Simple ConsistentHashing C extension for PHP5.
