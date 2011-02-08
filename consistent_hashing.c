@@ -25,17 +25,11 @@ zend_class_entry *php_consistent_hashing_sc_entry;
 
 static HashTable *ht_ch_targets;
 static HashTable *ht_ch_targetpoints;
-/* Temporary saved targets/points to know
- * if a target was added in a single request so that a ->getTarget() won't
- * return anything if no target was added nor return a target never added in
- * this request but in a previous one
- */
-static HashTable *ht_ch_targets_in_request;
-static HashTable *ht_ch_targetpoints_in_request;
 
 static function_entry php_consistent_hashing_sc_functions[] = {
-  PHP_ME(ConsistentHashing, addTarget, NULL, ZEND_ACC_PUBLIC)
-  PHP_ME(ConsistentHashing, getTarget, NULL, ZEND_ACC_PUBLIC)
+  PHP_ME(ConsistentHashing, __construct, NULL, ZEND_ACC_PUBLIC)
+  PHP_ME(ConsistentHashing, addTarget,   NULL, ZEND_ACC_PUBLIC)
+  PHP_ME(ConsistentHashing, getTarget,   NULL, ZEND_ACC_PUBLIC)
   { NULL, NULL, NULL }
 };
 
@@ -46,6 +40,14 @@ PHP_MINIT_FUNCTION(consistent_hashing)
     php_consistent_hashing_sc_functions);
 
   php_consistent_hashing_sc_entry = zend_register_internal_class(&ce TSRMLS_CC);
+
+  zend_declare_property_null(php_consistent_hashing_sc_entry,
+		  "targets_in_request", sizeof("targets_in_request")-1,
+		  ZEND_ACC_PRIVATE TSRMLS_CC);
+  zend_declare_property_null(php_consistent_hashing_sc_entry,
+		  "targetpoints_in_request", sizeof("targetpoints_in_request")-1,
+		  ZEND_ACC_PRIVATE TSRMLS_CC);
+
 
   ht_ch_targets = pemalloc(sizeof(HashTable), 1);
   ht_ch_targetpoints = pemalloc(sizeof(HashTable), 1);
@@ -69,44 +71,6 @@ PHP_MINIT_FUNCTION(consistent_hashing)
   return SUCCESS;
 }
 
-PHP_RINIT_FUNCTION(consistent_hashing)
-{
-  int num_of_elements;
-
-  /* FIXME should check if to much memory will be used and should cleanup the HashTables */
-
-  ht_ch_targets_in_request = emalloc(sizeof(HashTable));
-  ht_ch_targetpoints_in_request = emalloc(sizeof(HashTable));
-
-  if (zend_hash_init(ht_ch_targets_in_request, 32, NULL,
-        NULL, 1) != SUCCESS) { /* no destructor because the values are persistent whereas the hashtable is not */
-    efree(ht_ch_targets_in_request);
-    return FAILURE;
-  }
-
-  num_of_elements = zend_hash_num_elements(ht_ch_targetpoints);
-
-  if (num_of_elements == 0)
-    num_of_elements = 4*160;
-
-  if (zend_hash_init(ht_ch_targetpoints_in_request, num_of_elements, NULL,
-        NULL, 1) != SUCCESS) { /* no destructor because the values are persistent whereas the hashtable is not */
-    efree(ht_ch_targetpoints_in_request);
-    return FAILURE;
-  }
-
-  return SUCCESS;
-}
-
-PHP_RSHUTDOWN_FUNCTION(consistent_hashing)
-{
-  zend_hash_destroy(ht_ch_targets_in_request);
-  zend_hash_destroy(ht_ch_targetpoints_in_request);
-
-  efree(ht_ch_targets_in_request);
-  efree(ht_ch_targetpoints_in_request);
-}
-
 zend_module_entry consistent_hashing_module_entry = {
 #if ZEND_MODULE_API_NO >= 20010901
   STANDARD_MODULE_HEADER,
@@ -115,8 +79,8 @@ zend_module_entry consistent_hashing_module_entry = {
   NULL, /* FUNCTIONS */
   PHP_MINIT(consistent_hashing), /* MINIT */
   NULL, /* MSHUTDOWN */
-  PHP_RINIT(consistent_hashing), /* RINIT */
-  PHP_RSHUTDOWN(consistent_hashing), /* RSHUTDOWN */
+  NULL, /* RINIT */
+  NULL, /* RSHUTDOWN */
   NULL, /* MINFO */
 #if ZEND_MODULE_API_NO >= 20010901
   PHP_CONSISTENT_HASHING_EXTVER,
@@ -128,16 +92,80 @@ zend_module_entry consistent_hashing_module_entry = {
 ZEND_GET_MODULE(consistent_hashing)
 #endif
 
+PHP_METHOD(ConsistentHashing, __construct)
+{
+/* Temporary saved targets/points to know
+ * if a target was added in a single request so that a ->getTarget() won't
+ * return anything if no target was added nor return a target never added in
+ * this request but in a previous one
+ */
+  HashTable *ht_ch_targets_in_request;
+  HashTable *ht_ch_targetpoints_in_request;
+  zval *object;
+  zval *targets_in_request;
+  zval *targetpoints_in_request;
+  char *propname;
+  int propname_len;
+  int num_of_elements;
+
+  ht_ch_targets_in_request = emalloc(sizeof(HashTable));
+  ht_ch_targetpoints_in_request = emalloc(sizeof(HashTable));
+
+  if (zend_hash_init(ht_ch_targets_in_request, 32, NULL,
+        NULL, 1) != SUCCESS) { /* no destructor because the values are persistent whereas the hashtable is not */
+    efree(ht_ch_targets_in_request);
+    return;
+  }
+
+  num_of_elements = zend_hash_num_elements(ht_ch_targetpoints);
+
+  if (num_of_elements == 0)
+    num_of_elements = 4*160;
+
+  if (zend_hash_init(ht_ch_targetpoints_in_request, num_of_elements, NULL,
+        NULL, 1) != SUCCESS) { /* no destructor because the values are persistent whereas the hashtable is not */
+    efree(ht_ch_targetpoints_in_request);
+    return;
+  }
+
+  MAKE_STD_ZVAL(targets_in_request);
+  MAKE_STD_ZVAL(targetpoints_in_request);
+  Z_TYPE_P(targets_in_request) = IS_ARRAY;
+  Z_TYPE_P(targetpoints_in_request) = IS_ARRAY;
+
+  Z_ARRVAL_P(targets_in_request) = ht_ch_targets_in_request;
+  Z_ARRVAL_P(targetpoints_in_request) = ht_ch_targetpoints_in_request;
+
+  object = getThis();
+
+  zend_update_property(php_consistent_hashing_sc_entry,
+	object,
+	"targets_in_request", sizeof("targets_in_request")-1,
+	targets_in_request TSRMLS_CC);
+
+  zval_ptr_dtor(&targets_in_request);
+
+  zend_update_property(php_consistent_hashing_sc_entry,
+	object,
+	"targetpoints_in_request", sizeof("targetpoints_in_request")-1,
+	targetpoints_in_request TSRMLS_CC);
+
+  zval_ptr_dtor(&targetpoints_in_request);
+}
+
 PHP_METHOD(ConsistentHashing, addTarget)
 {
+  HashTable *ht_ch_targets_in_request;
+  HashTable *ht_ch_targetpoints_in_request;
   HashPosition position;
   PointTarget *pair;
+  zval *object;
   char *target;
   int target_len;
   int weight = 1;
 
-  if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,
-        "s|l!", &target, &target_len, &weight) == FAILURE) {
+  if (zend_parse_method_parameters(ZEND_NUM_ARGS() TSRMLS_CC, getThis(),
+        "Os|l!", &object, php_consistent_hashing_sc_entry, &target, &target_len, &weight) == FAILURE) {
     zend_throw_exception(NULL, "addTarget expects at least one parameter for the target", 0 TSRMLS_CC);
   }
 
@@ -149,6 +177,8 @@ PHP_METHOD(ConsistentHashing, addTarget)
     zend_throw_exception(NULL, "the target can't be an empty string", 0 TSRMLS_CC);
   }
 
+  ht_ch_targets_in_request      = ht_get_array(object, "targets_in_request");
+  ht_ch_targetpoints_in_request = ht_get_array(object, "targetpoints_in_request");
 
   if (!zend_hash_exists(ht_ch_targets_in_request, target, target_len)) {
     if (!zend_hash_exists(ht_ch_targets, target, target_len)) {
@@ -201,15 +231,17 @@ PHP_METHOD(ConsistentHashing, getTarget)
 
   point = ht_hash_object(key, key_len);
 
-  if ((target = ht_find_target(point)) == NULL) {
+  if ((target = ht_find_target(getThis(), point)) == NULL) {
     RETURN_NULL();
   }
 
   ZVAL_STRING(return_value, target, 1);
 }
 
-PHPAPI char * ht_find_target(uint point) {
+PHPAPI char * ht_find_target(zval *object, uint point) {
 
+  HashTable *ht_ch_targets_in_request;
+  HashTable *ht_ch_targetpoints_in_request;
   PointTarget *pair;
   int points;
   int targets;
@@ -219,6 +251,9 @@ PHPAPI char * ht_find_target(uint point) {
   int actual_point;
   int left_point;
   char *target;
+
+  ht_ch_targets_in_request      = ht_get_array(object, "targets_in_request");
+  ht_ch_targetpoints_in_request = ht_get_array(object, "targetpoints_in_request");
 
   points       = zend_hash_num_elements(ht_ch_targetpoints_in_request);
   targets      = zend_hash_num_elements(ht_ch_targets_in_request);
@@ -374,4 +409,19 @@ PHPAPI uint ht_hash_object(char *object, int object_len) {
   make_digest(hexdigest, digest);
 
   return (hexdigest[0] << 23 | hexdigest[1] << 16 | hexdigest[2] << 8 | hexdigest[3]);
+}
+
+PHPAPI HashTable * ht_get_array(zval *object, char *name TSRMLS_DC) {
+  HashTable *ht;
+  zval *property;
+
+  property = zend_read_property(
+      php_consistent_hashing_sc_entry,
+      object,
+      name, strlen(name), 0);
+
+
+  ht = Z_ARRVAL_P(property);
+
+  return ht;
 }

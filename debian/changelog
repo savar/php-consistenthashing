@@ -1,3 +1,10 @@
+php-consistenthashing (0.2) unstable; urgency=low
+
+  * Fix up a problem when creating more than one instance of
+    ConsistentHashing.
+
+ -- Simon Effenberg <savar@schuldeigen.de>  Tue, 08 Feb 2011 13:44:51 +0100
+
 php-consistenthashing (0.1) unstable; urgency=low
 
   * Initial release.
