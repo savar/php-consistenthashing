@@ -39,6 +39,7 @@ typedef struct point_target {
 
 /* Methods */
 PHP_METHOD(ConsistentHashing, __construct);
+PHP_METHOD(ConsistentHashing, __destruct);
 PHP_METHOD(ConsistentHashing, addTarget);
 PHP_METHOD(ConsistentHashing, getTarget);
 
@@ -46,8 +47,9 @@ PHP_METHOD(ConsistentHashing, getTarget);
 PHPAPI int ht_target_init(char *target, int target_len, long weight TSRMLS_DC);
 PHPAPI char * ht_find_target(zval *object, uint point);
 PHPAPI uint ht_hash_object(char *object, int object_len);
-PHPAPI HashTable * ht_get_array(zval *object, char *name TSRMLS_DC);
+PHPAPI int ht_get_array(zval *object, HashTable **array, char *name TSRMLS_DC);
 static int ht_compare_targetpoints(void *a, void *b TSRMLS_DC);
+static void ch_destructor_hashtables(zend_rsrc_list_entry * rsrc TSRMLS_DC);
 
 extern zend_module_entry consistent_hashing_module_entry;
 #define phpext_consistent_hashing_ptr &consistent_hashing_module_entry

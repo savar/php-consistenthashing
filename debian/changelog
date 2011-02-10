@@ -1,3 +1,11 @@
+php-consistenthashing (0.2.1) unstable; urgency=low
+
+  * When loading much data into rum the php GC seems to have problem with
+    the protected attributes. SegFaults happened on live mashines. Now
+    doing some stuff a little bit different.
+
+ -- Simon Effenberg <savar@schuldeigen.de>  Thu, 10 Feb 2011 14:22:34 +0100
+
 php-consistenthashing (0.2) unstable; urgency=low
 
   * Fix up a problem when creating more than one instance of

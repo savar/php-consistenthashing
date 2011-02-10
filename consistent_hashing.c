@@ -25,9 +25,11 @@ zend_class_entry *php_consistent_hashing_sc_entry;
 
 static HashTable *ht_ch_targets;
 static HashTable *ht_ch_targetpoints;
+static int le_ch_hashtables;
 
 static function_entry php_consistent_hashing_sc_functions[] = {
   PHP_ME(ConsistentHashing, __construct, NULL, ZEND_ACC_PUBLIC)
+  PHP_ME(ConsistentHashing, __destruct, NULL, ZEND_ACC_PUBLIC)
   PHP_ME(ConsistentHashing, addTarget,   NULL, ZEND_ACC_PUBLIC)
   PHP_ME(ConsistentHashing, getTarget,   NULL, ZEND_ACC_PUBLIC)
   { NULL, NULL, NULL }
@@ -40,14 +42,6 @@ PHP_MINIT_FUNCTION(consistent_hashing)
     php_consistent_hashing_sc_functions);
 
   php_consistent_hashing_sc_entry = zend_register_internal_class(&ce TSRMLS_CC);
-
-  zend_declare_property_null(php_consistent_hashing_sc_entry,
-		  "targets_in_request", sizeof("targets_in_request")-1,
-		  ZEND_ACC_PRIVATE TSRMLS_CC);
-  zend_declare_property_null(php_consistent_hashing_sc_entry,
-		  "targetpoints_in_request", sizeof("targetpoints_in_request")-1,
-		  ZEND_ACC_PRIVATE TSRMLS_CC);
-
 
   ht_ch_targets = pemalloc(sizeof(HashTable), 1);
   ht_ch_targetpoints = pemalloc(sizeof(HashTable), 1);
@@ -67,6 +61,13 @@ PHP_MINIT_FUNCTION(consistent_hashing)
     pefree(ht_ch_targetpoints, 1);
     return FAILURE;
   }
+
+  le_ch_hashtables = zend_register_list_destructors_ex(
+    ch_destructor_hashtables,
+    NULL,
+    "ConsistentHashing Hashtables Buffer",
+    module_number
+  );
 
   return SUCCESS;
 }
@@ -102,11 +103,8 @@ PHP_METHOD(ConsistentHashing, __construct)
   HashTable *ht_ch_targets_in_request;
   HashTable *ht_ch_targetpoints_in_request;
   zval *object;
-  zval *targets_in_request;
-  zval *targetpoints_in_request;
-  char *propname;
-  int propname_len;
   int num_of_elements;
+  int id;
 
   ht_ch_targets_in_request = emalloc(sizeof(HashTable));
   ht_ch_targetpoints_in_request = emalloc(sizeof(HashTable));
@@ -128,29 +126,32 @@ PHP_METHOD(ConsistentHashing, __construct)
     return;
   }
 
-  MAKE_STD_ZVAL(targets_in_request);
-  MAKE_STD_ZVAL(targetpoints_in_request);
-  Z_TYPE_P(targets_in_request) = IS_ARRAY;
-  Z_TYPE_P(targetpoints_in_request) = IS_ARRAY;
+  object = getThis();
 
-  Z_ARRVAL_P(targets_in_request) = ht_ch_targets_in_request;
-  Z_ARRVAL_P(targetpoints_in_request) = ht_ch_targetpoints_in_request;
+  id = zend_list_insert(ht_ch_targets_in_request, le_ch_hashtables);
+  add_property_resource(object, "targets_in_request", id);
+
+  id = zend_list_insert(ht_ch_targetpoints_in_request, le_ch_hashtables);
+  add_property_resource(object, "targetpoints_in_request", id);
+}
+
+PHP_METHOD(ConsistentHashing, __destruct)
+{
+  HashTable *dummy_ht;
+  zval *object;
+  int id;
 
   object = getThis();
 
-  zend_update_property(php_consistent_hashing_sc_entry,
-	object,
-	"targets_in_request", sizeof("targets_in_request")-1,
-	targets_in_request TSRMLS_CC);
+  id = ht_get_array(object, &dummy_ht, "targets_in_request");
 
-  zval_ptr_dtor(&targets_in_request);
+  if (id >= 0)
+    zend_list_delete(id);
 
-  zend_update_property(php_consistent_hashing_sc_entry,
-	object,
-	"targetpoints_in_request", sizeof("targetpoints_in_request")-1,
-	targetpoints_in_request TSRMLS_CC);
+  id = ht_get_array(object, &dummy_ht, "targetpoints_in_request");
 
-  zval_ptr_dtor(&targetpoints_in_request);
+  if (id >= 0)
+    zend_list_delete(id);
 }
 
 PHP_METHOD(ConsistentHashing, addTarget)
@@ -167,18 +168,28 @@ PHP_METHOD(ConsistentHashing, addTarget)
   if (zend_parse_method_parameters(ZEND_NUM_ARGS() TSRMLS_CC, getThis(),
         "Os|l!", &object, php_consistent_hashing_sc_entry, &target, &target_len, &weight) == FAILURE) {
     zend_throw_exception(NULL, "addTarget expects at least one parameter for the target", 0 TSRMLS_CC);
+    return;
   }
 
   if (weight < 1) {
     zend_throw_exception(NULL, "weight has to be an integer greater than 0", 0 TSRMLS_CC);
+    return;
   }
 
   if (target_len <= 0) {
     zend_throw_exception(NULL, "the target can't be an empty string", 0 TSRMLS_CC);
+    return;
   }
 
-  ht_ch_targets_in_request      = ht_get_array(object, "targets_in_request");
-  ht_ch_targetpoints_in_request = ht_get_array(object, "targetpoints_in_request");
+  if (ht_get_array(object, &ht_ch_targets_in_request, "targets_in_request") < 0) {
+    zend_throw_exception(NULL, "unexpected error occurred .. don't know what to do", 0 TSRMLS_CC);
+    return;
+  }
+
+  if (ht_get_array(object, &ht_ch_targetpoints_in_request, "targetpoints_in_request") < 0) {
+    zend_throw_exception(NULL, "unexpected error occurred .. don't know what to do", 0 TSRMLS_CC);
+    return;
+  }
 
   if (!zend_hash_exists(ht_ch_targets_in_request, target, target_len)) {
     if (!zend_hash_exists(ht_ch_targets, target, target_len)) {
@@ -252,8 +263,13 @@ PHPAPI char * ht_find_target(zval *object, uint point) {
   int left_point;
   char *target;
 
-  ht_ch_targets_in_request      = ht_get_array(object, "targets_in_request");
-  ht_ch_targetpoints_in_request = ht_get_array(object, "targetpoints_in_request");
+  if (ht_get_array(object, &ht_ch_targets_in_request, "targets_in_request") < 0) {
+    return NULL;
+  }
+
+  if (ht_get_array(object, &ht_ch_targetpoints_in_request, "targetpoints_in_request") < 0) {
+    return NULL;
+  }
 
   points       = zend_hash_num_elements(ht_ch_targetpoints_in_request);
   targets      = zend_hash_num_elements(ht_ch_targets_in_request);
@@ -411,17 +427,29 @@ PHPAPI uint ht_hash_object(char *object, int object_len) {
   return (hexdigest[0] << 23 | hexdigest[1] << 16 | hexdigest[2] << 8 | hexdigest[3]);
 }
 
-PHPAPI HashTable * ht_get_array(zval *object, char *name TSRMLS_DC) {
-  HashTable *ht;
-  zval *property;
+PHPAPI int ht_get_array(zval *object, HashTable **array, char *name TSRMLS_DC) {
+  zval **hashtable;
+  int resource_type;
 
-  property = zend_read_property(
-      php_consistent_hashing_sc_entry,
-      object,
-      name, strlen(name), 0);
+  if (Z_TYPE_P(object) != IS_OBJECT || zend_hash_find(Z_OBJPROP_P(object), name,
+                          strlen(name) + 1, (void **) &hashtable) == FAILURE) {
+    return -1;
+  }
 
+  *array = (HashTable *) zend_list_find(Z_LVAL_PP(hashtable), &resource_type);
 
-  ht = Z_ARRVAL_P(property);
+  if (!array || resource_type != le_ch_hashtables) {
+    return -1;
+  }
 
-  return ht;
+  return Z_LVAL_PP(hashtable);
 }
+
+static void ch_destructor_hashtables(zend_rsrc_list_entry * rsrc TSRMLS_DC)
+{
+    HashTable *ht = (HashTable*) rsrc->ptr;
+    zend_hash_destroy(ht);
+    efree(ht);
+}
+
+// vim: ts=2:expandtab
